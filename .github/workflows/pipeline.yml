@@ -1,4 +1,4 @@
-name: ML Validation & Deployment Pipeline
+name: ML Validation and Deployment Pipeline
 
 on:
   push:
@@ -9,7 +9,7 @@ jobs:
   # JOB 1 – VALIDATE
   # ─────────────────────────────────────────────
   validate:
-    name: 🧪 Validate Model
+    name: Validate Model
     runs-on: ubuntu-latest
 
     steps:
@@ -25,22 +25,23 @@ jobs:
         run: pip install -r requirements.txt
 
       # Pull training data via DVC
+      # If you have no DVC remote, replace `dvc pull` with:
+      # run: echo "No DVC remote configured - skipping pull"
       - name: Pull data with DVC
-        env:
-          # DVC remote credentials stored as repo secrets
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: dvc pull
-        # If you have no real remote, comment the line above and uncomment below:
-        # run: echo "No DVC remote configured – skipping pull"
 
-      # Train the model and log to MLflow
+      # Train the model and log to the MLflow Tracking Server
       - name: Train model
         env:
+          # MLFLOW_TRACKING_URI  – URL of your self-hosted MLflow server
+          #                        e.g. http://<your-server-ip>:5000
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          # MLFLOW_TRACKING_USERNAME / PASSWORD are only needed if you
+          # enabled --auth on the MLflow server (mlflow server --auth).
+          # Leave the secrets empty / unset if your server has no auth.
           MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
-          # ── For a FAILED run, inject 0.70.   For a PASSING run, inject 0.90 ──
+          # Set this secret to 0.70 for a FAILED run or 0.90 for a PASSING run
           MOCK_ACCURACY: ${{ secrets.MOCK_ACCURACY }}
         run: python train.py --epochs 1
 
@@ -56,9 +57,9 @@ jobs:
   # JOB 2 – DEPLOY
   # ─────────────────────────────────────────────
   deploy:
-    name: 🚀 Deploy Model
+    name: Deploy Model
     runs-on: ubuntu-latest
-    needs: validate          # only runs after validate succeeds
+    needs: validate
 
     steps:
       - name: Checkout repository
@@ -78,7 +79,7 @@ jobs:
         with:
           name: model-info
 
-      # Check accuracy threshold – fails the pipeline if < 0.85
+      # Fail the pipeline if accuracy < 0.85
       - name: Check accuracy threshold
         env:
           MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
@@ -86,10 +87,10 @@ jobs:
           MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
         run: python check_threshold.py
 
-      # Mock Docker build (simulates containerising the model)
+      # Mock Docker build — simulates containerising the model
       - name: Mock Docker build
         run: |
           RUN_ID=$(cat model_info.txt)
           echo "Building Docker image for Run ID: $RUN_ID"
           echo "docker build --build-arg RUN_ID=$RUN_ID -t sign-language-model:$RUN_ID ."
-          echo "✅ Mock Docker build complete."
+          echo "Mock Docker build complete."

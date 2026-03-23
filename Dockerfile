@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Dockerfile – Sign Language Classifier Model Server
+# Dockerfile - Sign Language Classifier Model Server
 # ─────────────────────────────────────────────────────────────────────────────
 FROM python:3.10-slim
 
@@ -17,26 +17,26 @@ ENV MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASSWORD}
 
 WORKDIR /app
 
-# Install MLflow + runtime deps
+# Install MLflow and runtime deps
 RUN pip install --no-cache-dir mlflow torch
 
-# ── Download the model artifact from MLflow tracking server ──────────────────
+# Download the model artifact from the MLflow tracking server.
 # Real command: mlflow artifacts download --run-id <RUN_ID>
-#               --artifact-path model       (the path inside the run)
-#               --dst-path /app/model       (local destination)
+#               --artifact-path model      (path inside the run)
+#               --dst-path /app/model      (local destination)
 RUN if [ -n "${RUN_ID}" ] && [ -n "${MLFLOW_TRACKING_URI}" ]; then \
-        echo "⬇️  Downloading model for Run ID: ${RUN_ID} from ${MLFLOW_TRACKING_URI}" && \
+        echo "Downloading model for Run ID: ${RUN_ID} from ${MLFLOW_TRACKING_URI}" && \
         mlflow artifacts download \
             --run-id "${RUN_ID}" \
             --artifact-path model \
             --dst-path /app/model; \
     else \
-        echo "⚠️  RUN_ID or MLFLOW_TRACKING_URI not set – skipping download (mock mode)." && \
+        echo "RUN_ID or MLFLOW_TRACKING_URI not set - running in mock mode." && \
         mkdir -p /app/model && \
         echo "${RUN_ID}" > /app/model/run_id.txt; \
     fi
 
 COPY . /app
 
-# Default command – replace with your real inference server entrypoint
+# Default command - replace with your real inference server entrypoint
 CMD ["python", "-c", "import os; print('Model server running. Run ID:', os.environ.get('RUN_ID', 'N/A'))"]
