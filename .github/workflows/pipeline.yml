@@ -1,0 +1,95 @@
+name: ML Validation & Deployment Pipeline
+
+on:
+  push:
+    branches: ["**"]
+
+jobs:
+  # ─────────────────────────────────────────────
+  # JOB 1 – VALIDATE
+  # ─────────────────────────────────────────────
+  validate:
+    name: 🧪 Validate Model
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Pull training data via DVC
+      - name: Pull data with DVC
+        env:
+          # DVC remote credentials stored as repo secrets
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: dvc pull
+        # If you have no real remote, comment the line above and uncomment below:
+        # run: echo "No DVC remote configured – skipping pull"
+
+      # Train the model and log to MLflow
+      - name: Train model
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+          # ── For a FAILED run, inject 0.70.   For a PASSING run, inject 0.90 ──
+          MOCK_ACCURACY: ${{ secrets.MOCK_ACCURACY }}
+        run: python train.py --epochs 1
+
+      # Upload model_info.txt so the deploy job can read the Run ID
+      - name: Upload model_info artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-info
+          path: model_info.txt
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # JOB 2 – DEPLOY
+  # ─────────────────────────────────────────────
+  deploy:
+    name: 🚀 Deploy Model
+    runs-on: ubuntu-latest
+    needs: validate          # only runs after validate succeeds
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Download the artifact produced by the validate job
+      - name: Download model_info artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: model-info
+
+      # Check accuracy threshold – fails the pipeline if < 0.85
+      - name: Check accuracy threshold
+        env:
+          MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.MLFLOW_TRACKING_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.MLFLOW_TRACKING_PASSWORD }}
+        run: python check_threshold.py
+
+      # Mock Docker build (simulates containerising the model)
+      - name: Mock Docker build
+        run: |
+          RUN_ID=$(cat model_info.txt)
+          echo "Building Docker image for Run ID: $RUN_ID"
+          echo "docker build --build-arg RUN_ID=$RUN_ID -t sign-language-model:$RUN_ID ."
+          echo "✅ Mock Docker build complete."
